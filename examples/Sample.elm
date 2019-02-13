@@ -1,17 +1,23 @@
-module Sample exposing (..)
+module Sample exposing (Model, Msg(..), init, main, subscriptions, update, view)
 
+import Browser
 import Html exposing (..)
 import Interactive
-import Keyboard.Extra as Keyboard
+import Keyboard
+
 
 
 -- MAIN
 
 
-main : Program Never Model Msg
+type alias Flags =
+    ()
+
+
+main : Program Flags Model Msg
 main =
-    program
-        { init = init
+    Browser.element
+        { init = \_ -> init
         , update = update
         , view = view
         , subscriptions = subscriptions
@@ -53,32 +59,38 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         InteractiveMsg subMsg ->
-            (case subMsg of
-                Interactive.Mouse _ ->
-                    ( { model | notification = "Mouse Event" }, Cmd.none )
+            Interactive.update subMsg model.interactive
+                |> Tuple.mapFirst (\subModel -> { model | interactive = subModel })
+                |> evalInteractive
 
-                Interactive.KeyboardMsg subMsg ->
-                    ( { model | notification = "Keyboard Event" }, Cmd.none )
-                        |> Tuple.mapFirst
-                            (\model ->
-                                case Interactive.getKeys model.interactive of
-                                    [ Keyboard.Control, Keyboard.CharC ] ->
-                                        { model | notification = "" }
 
-                                    _ ->
-                                        model
-                            )
+evalInteractive : ( Model, Maybe Interactive.OutMsg ) -> ( Model, Cmd Msg )
+evalInteractive ( model, maybeOutMsg ) =
+    case maybeOutMsg of
+        Just (Interactive.OutMouse _) ->
+            ( { model | notification = "Mouse Event" }, Cmd.none )
 
-                _ ->
-                    ( model, Cmd.none )
-            )
-                |> Tuple.mapFirst
-                    (\model ->
-                        { model
-                            | interactive =
-                                Interactive.update subMsg model.interactive
-                        }
-                    )
+        Just (Interactive.OutKeyChange subMsg) ->
+            ( { model | notification = "Keyboard Event" }, Cmd.none )
+                |> batch (evalKeyChange subMsg model)
+
+        _ ->
+            ( model, Cmd.none )
+
+
+evalKeyChange : Keyboard.KeyChange -> Model -> ( Model, Cmd Msg )
+evalKeyChange msg model =
+    case ( msg, model.interactive.keysDown ) of
+        ( Keyboard.KeyDown _, [ Keyboard.Control, Keyboard.Character "c" ] ) ->
+            ( { model | notification = "" }, Cmd.none )
+
+        _ ->
+            ( model, Cmd.none )
+
+
+batch : ( Model, Cmd Msg ) -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+batch ( _, cmd1 ) ( model, cmd2 ) =
+    ( model, Cmd.batch [ cmd1, cmd2 ] )
 
 
 
@@ -100,19 +112,19 @@ view { interactive, notification } =
         [ table []
             [ tr []
                 [ td [] [ text "Time" ]
-                , td [] [ text <| toString interactive.time ]
+                , td [] [ text <| Debug.toString interactive.time ]
                 ]
             , tr []
                 [ td [] [ text "Mouse" ]
-                , td [] [ text <| toString interactive.mouse ]
+                , td [] [ text <| Debug.toString interactive.mouse ]
                 ]
             , tr []
                 [ td [] [ text "KeysDown" ]
-                , td [] [ text <| toString interactive.keysDown ]
+                , td [] [ text <| Debug.toString interactive.keysDown ]
                 ]
             , tr []
                 [ td [] [ text "WindowSize" ]
-                , td [] [ text <| toString interactive.windowSize ]
+                , td [] [ text <| Debug.toString interactive.windowSize ]
                 ]
             ]
         , text notification

@@ -1,30 +1,13 @@
-module Interactive
-    exposing
-        ( Model
-        , Msg(..)
-        , getKeys
-        , init
-        , subKeyboard
-        , subMouse
-        , subTick
-        , subWindowResize
-        , subscriptions
-        , update
-        )
+module Interactive exposing (Model, Msg, OutMsg(..), init, subKeyboard, subMouse, subTick, subWindowResize, subscriptions, update)
 
-{-|
+import Browser.Dom exposing (getViewport)
+import Browser.Events exposing (onAnimationFrame, onMouseMove, onResize)
+import Html.Events.Extra.Mouse as Mouse
+import Json.Decode as Decode
+import Keyboard
+import Task exposing (Task)
+import Time
 
-@docs Model, getKeys, init, subscriptions, update, Msg, subMouse, subTick, subKeyboard, subWindowResize
-
--}
-
-import AnimationFrame exposing (..)
-import Keyboard.Extra as Keyboard exposing (Key(..))
-import Mouse exposing (..)
-import Set
-import Task
-import Time exposing (Time)
-import Window
 
 
 -- MODEL
@@ -32,10 +15,10 @@ import Window
 
 {-| -}
 type alias Model =
-    { time : Time
-    , mouse : Mouse.Position
-    , keysDown : Keyboard.Model
-    , windowSize : Window.Size
+    { time : Float
+    , mouse : ( Float, Float )
+    , keysDown : List Keyboard.Key
+    , windowSize : ( Float, Float )
     }
 
 
@@ -43,14 +26,20 @@ type alias Model =
 init : ( Model, Cmd Msg )
 init =
     ( { time = 0
-      , mouse = { x = 0, y = 0 }
-      , keysDown = Keyboard.init
-      , windowSize = { width = 0, height = 0 }
+      , mouse = ( 0, 0 )
+      , keysDown = []
+      , windowSize = ( 0, 0 )
       }
     , Cmd.batch
-        [ Task.perform WindowResize Window.size
+        [ Task.perform WindowResize getWindowSize
         ]
     )
+
+
+getWindowSize : Task x ( Float, Float )
+getWindowSize =
+    getViewport
+        |> Task.map (\{ viewport } -> ( viewport.width, viewport.height ))
 
 
 
@@ -60,38 +49,35 @@ init =
 {-| -}
 type Msg
     = Tick Float
-    | Mouse Position
+    | Mouse ( Float, Float )
     | KeyboardMsg Keyboard.Msg
-    | WindowResize Window.Size
+    | WindowResize ( Float, Float )
+
+
+type OutMsg
+    = OutTick Float
+    | OutMouse ( Float, Float )
+    | OutKeyChange Keyboard.KeyChange
+    | OutWindowResize ( Float, Float )
 
 
 {-| -}
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Maybe OutMsg )
 update msg model =
     case msg of
         Tick time ->
-            { model | time = time }
+            ( { model | time = time }, Just <| OutTick time )
 
-        Mouse position ->
-            { model | mouse = position }
+        Mouse mouse ->
+            ( { model | mouse = mouse }, Just <| OutMouse mouse )
 
         KeyboardMsg subMsg ->
-            { model | keysDown = Keyboard.update subMsg model.keysDown }
+            Keyboard.updateWithKeyChange Keyboard.anyKeyOriginal subMsg model.keysDown
+                |> Tuple.mapFirst (\subModel -> { model | keysDown = subModel })
+                |> Tuple.mapSecond (Maybe.map OutKeyChange)
 
         WindowResize windowSize ->
-            { model | windowSize = windowSize }
-
-
-
--- SELECTORS
-
-
-{-| -}
-getKeys : Model -> List Key
-getKeys { keysDown } =
-    keysDown
-        |> Set.toList
-        |> List.map Keyboard.fromCode
+            ( { model | windowSize = windowSize }, Just <| OutWindowResize windowSize )
 
 
 
@@ -112,13 +98,15 @@ subscriptions =
 {-| -}
 subTick : Sub Msg
 subTick =
-    times Tick
+    onAnimationFrame (Time.posixToMillis >> toFloat >> Tick)
 
 
 {-| -}
 subMouse : Sub Msg
 subMouse =
-    moves Mouse
+    Mouse.eventDecoder
+        |> Decode.map (Mouse << .clientPos)
+        |> onMouseMove
 
 
 {-| -}
@@ -130,4 +118,4 @@ subKeyboard =
 {-| -}
 subWindowResize : Sub Msg
 subWindowResize =
-    Window.resizes WindowResize
+    onResize (\x y -> WindowResize ( toFloat x, toFloat y ))
