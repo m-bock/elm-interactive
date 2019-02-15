@@ -73,7 +73,7 @@ update msg model =
 
         KeyboardMsg subMsg ->
             Keyboard.updateWithKeyChange Keyboard.anyKeyOriginal subMsg model.keysDown
-                |> Tuple.mapFirst (\subModel -> { model | keysDown = subModel })
+                |> Tuple.mapFirst (\subModel -> { model | keysDown = List.reverse subModel })
                 |> Tuple.mapSecond (Maybe.map OutKeyChange)
 
         WindowResize windowSize ->
