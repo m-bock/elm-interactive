@@ -1,5 +1,7 @@
 module Interactive exposing (Model, Msg, OutMsg(..), init, subKeyboard, subMouse, subTick, subWindowResize, subscriptions, update)
 
+{-| -}
+
 import Browser.Dom exposing (getViewport)
 import Browser.Events exposing (onAnimationFrame, onMouseMove, onResize)
 import Html.Events.Extra.Mouse as Mouse
